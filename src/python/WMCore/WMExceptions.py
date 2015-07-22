@@ -62,4 +62,4 @@ WMJobPermanentSystemErrors
 List of job errors produced by WMCore that are internal to the application and are used
 to indicate that a job should not be retried since the error is permanent
 """
-WMJobPermanentSystemErrors = [61102]
+WMJobPermanentSystemErrors = []

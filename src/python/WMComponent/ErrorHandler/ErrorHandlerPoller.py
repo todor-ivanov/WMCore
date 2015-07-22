@@ -96,9 +96,6 @@ class ErrorHandlerPoller(BaseWorkerThread):
         #    self.sendAlert will be then be available
         self.initAlerts(compName = "ErrorHandler")
 
-        # Some exit codes imply an immediate failure, non-configurable
-        self.exitCodes.extend(WMJobPermanentSystemErrors)
-
         return
 
     def setup(self, parameters = None):
