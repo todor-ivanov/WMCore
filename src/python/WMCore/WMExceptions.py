@@ -56,6 +56,7 @@ WMJobErrorCodes = {50660 :
                    "The job was killed by the WMAgent because the site it was running at was set to Down",
                    61304 :
                    "The job was killed by the WMAgent for using too much wallclock time"}
+<<<<<<< HEAD
 
 """
 WMJobPermanentSystemErrors
@@ -63,3 +64,5 @@ List of job errors produced by WMCore that are internal to the application and a
 to indicate that a job should not be retried since the error is permanent
 """
 WMJobPermanentSystemErrors = []
+=======
+>>>>>>> 5098a58487114cfa38180b9123399a0ff192fe5b
