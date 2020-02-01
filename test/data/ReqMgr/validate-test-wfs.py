@@ -9,9 +9,13 @@ import pwd
 import sys
 import urllib
 import urllib2
+import re
 from pprint import pprint
 from pprint import pformat
 from urllib2 import HTTPError, URLError
+from textwrap import TextWrapper
+from collections import OrderedDict
+
 
 # table parameters
 SEPARATELINE = "|" + "-" * 51 + "|"
@@ -239,6 +243,54 @@ def compareSpecial(d1, d2, key=None):
 
     return 'ok'
 
+def __twClosure__(replace_whitespace=False,
+                  break_long_words=False,
+                  width=120,
+                  initial_indent=''):
+    """
+    Deals with indentation of dictionaries with very long key, value pairs.
+    params: look at TextWrapper documentation
+
+    Wraps all strings for both keys and values to 120 chars.
+    Uses 4 spaces indentation for both keys and values.
+    Nested dictionaries and lists go to next line.
+    """
+    twr = TextWrapper(replace_whitespace=replace_whitespace,
+                      break_long_words=break_long_words,
+                      width=width,
+                      initial_indent=initial_indent)
+
+    def twEnclosed(obj, ind=''):
+        output = ''
+        if isinstance(obj, dict):
+            obj = OrderedDict(sorted(obj.items(),
+                                     key=lambda t: t[0],
+                                     reverse=False))
+            output += '\n'
+            ind += '    '
+            for key, value in obj.iteritems():
+                output += "%s%s: %s\n" % (ind,
+                                            ''.join(twr.wrap(key)),
+                                            twEnclosed(value, ind ))
+        elif isinstance(obj, list):
+            output += '\n'
+            ind += '    '
+            for value in obj:
+                output += "%s%s\n" % (ind, twEnclosed(value, ind ))
+        else:
+            output += "%s" % ''.join(twr.wrap(str(obj)))
+        # TODO: On every recursive call an additional '\n' is accumulated at the
+        #       end of the 'output' string. We may use the regexp mentioned
+        #       bellow to clean it, but it also strips the '\n's between nested
+        #       dicts/lists, which emphasizes them better.
+        output = re.sub(r'(\n+)', r"\n", output)
+        return output
+    return twEnclosed
+
+
+def twPrint(obj):
+    twPrinter=__twClosure__()
+    print(twPrinter(obj))
 
 def handleReqMgr(reqName, reqmgrUrl):
     """
@@ -303,7 +355,12 @@ def handleReqMgr(reqName, reqmgrUrl):
             print("WARNING: StepChain/TaskChain workflow without a 'ChainParentageMap' argument!")
 
     ### Handle harvesting case
-    print(" - Comments: %s" % pformat(reqmgrOut.get('Comments', '')))
+    from collections import OrderedDict
+
+    print("----------------------------------------------------\nComments:")
+    twPrint(reqmgrOut.get('Comments', ''))
+    print("----------------------------------------------------\n")
+
     harvesting(reqmgrOut, reqmgrOutDsets)
     if reqmgrOut['RequestType'] == 'DQMHarvest':
         print("There is nothing else that we can validate here...\n")
@@ -465,6 +522,7 @@ def main():
     reqmgrUrl = "https://" + args.reqmgr if args.reqmgr else "https://cmsweb-testbed.cern.ch"
 
     for reqName in listRequests:
+        print("\n----------------------------------------------------")
         print("==> %s" % reqName)
         ### Retrieve and process ReqMgr information
         reqmgrInputDset, reqmgrOutDsets = handleReqMgr(reqName, reqmgrUrl)
@@ -486,15 +544,15 @@ def main():
         ### Starts VERBOSE mode for the information retrieved so far
         if verbose:
             print("\n======> Request information from reqmgr2 db: ")
-            pprint(reqmgrInputDset)
+            twPrint(reqmgrInputDset)
             print("\n======> ReqMgr2 output dataset info: ")
-            pprint(reqmgrOutDsets)
+            twPrint(reqmgrOutDsets)
             print("\n======> Couch output dataset info: ")
-            pprint(couchInfo)
+            twPrint(couchInfo)
             print("\n======> DBS info: ")
-            pprint(dbsInfo)
+            twPrint(dbsInfo)
             print("\n======> PhEDEx info: ")
-            pprint(phedexInfo)
+            twPrint(phedexInfo)
         print("\n")
 
     sys.exit(0)
@@ -502,3 +560,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
