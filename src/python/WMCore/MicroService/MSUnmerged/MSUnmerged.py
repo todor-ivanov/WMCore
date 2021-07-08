@@ -89,6 +89,7 @@ class MSUnmerged(MSCore):
                                                 Functor(self.consRecordAge),
                                                 Functor(self.getUnmergedFiles),
                                                 Functor(self.filterUnmergedFiles),
+                                                Functor(self.getPfn),
                                                 Functor(self.cleanRSE),
                                                 Functor(self.updateRSECounters, pName),
                                                 Functor(self.updateRSETimestamps, start=False, end=True),
@@ -101,7 +102,8 @@ class MSUnmerged(MSCore):
         self.protectedLFNs = []
 
         # The basic /store/unmerged regular expression:
-        self.regStoreUnmerged = re.compile("^/store/unmerged/.*$")
+        self.regStoreUnmergedLfn = re.compile("^/store/unmerged/.*$")
+        self.regStoreUnmergedPfn = re.compile("^.+/store/unmerged/.*$")
 
     # @profile
     def execute(self):
@@ -223,7 +225,7 @@ class MSUnmerged(MSCore):
         """
         A method to heck the duration of the consistency record for the RSE
         :param rse: The RSE to be checked
-        :return:    rse
+        :return:    rse or raises MSUnmergedPlineExit
         """
         rseName = rse['name']
         isConsDone = self.rseConsStats[rseName]['status'] == 'done'
@@ -260,11 +262,11 @@ class MSUnmerged(MSCore):
             filePath = allUnmerged.pop()
             rse['counters']['totalNumFiles'] += 1
             # Check if what we start with is under /store/unmerged/*
-            if self.regStoreUnmerged.match(filePath):
+            if self.regStoreUnmergedLfn.match(filePath):
                 # Cut the path to the deepest level known to WMStats protected LFNs
                 filePath = self._cutPath(filePath)
                 # Check if what is left is still under /store/unmerged/*
-                if self.regStoreUnmerged.match(filePath):
+                if self.regStoreUnmergedLfn.match(filePath):
                     # Add it to the set of allUnmerged
                     rse['files']['allUnmerged'].add(filePath)
         return rse
@@ -319,6 +321,29 @@ class MSUnmerged(MSCore):
 
         rse['counters']['toDelete'] = len(rse['files']['toDelete'])
         return rse
+
+    def getPfn(self, rse):
+        """
+        A method for fetching the common Pfn (method + hostname + global path)
+        for the RSE. It uses Rucio client method lfns2pfns for one of the LFNs
+        already recorded in the RSE in order to resolve the lfn to pfn mapping
+        and then tries to parse the resultant pfn and cut off the lfn part.
+        :param rse: The RSE to be checked
+        :return:    rse or raises MSUnmergedPlineExit
+        """
+        # NOTE:  pfnPrefix here is considered the full part of the pfn up to the
+        #        beginning of the lfn part rather than just the protocol prefix
+        if rse['files']['allUnmerged']:
+            lfn = next(iter(rse['files']['allUnmerged']))
+            pfnDict = self.rucio.getPFN(rse['name'], lfn, protocol='gsiftp', operation='delete')
+            pfnFull = pfnDict[lfn]
+            if self.regStoreUnmergedPfn.match(pfnFull):
+                pfnPrefix = pfnFull.split('/store/unmerged/')[0]
+                rse['delInterface'] = pfnPrefix
+                return rse
+        rse['counters']['toDelete'] = -1
+        msg = "Could not establish the correct pfn Prefix for RSE: %s." % rse['name']
+        raise MSUnmergedPlineExit(msg)
 
     # @profile
     def purgeRseObj(self, rse, dumpRSE=False):
