@@ -13,6 +13,7 @@ RSE basis.
 from __future__ import division, print_function
 
 from pprint import pformat
+from IPython.lib.pretty import pretty
 from time import time
 
 import random
@@ -73,6 +74,7 @@ class MSUnmerged(MSCore):
         self.msConfig.setdefault("rseExpr", "*")
         self.msConfig.setdefault("rucioConMon", "https://cmsweb-testbed.cern.ch/rucioconmon/")
         self.msConfig.setdefault("enableRealMode", False)
+        self.msConfig.setdefault("dumpRSE", False)
         # TODO: Add 'alertManagerUrl' to msConfig'
         # self.alertServiceName = "ms-unmerged"
         # self.alertManagerAPI = AlertManagerAPI(self.msConfig.get("alertManagerUrl", None), logger=logger)
@@ -93,7 +95,7 @@ class MSUnmerged(MSCore):
                                                 Functor(self.cleanRSE),
                                                 Functor(self.updateRSECounters, pName),
                                                 Functor(self.updateRSETimestamps, start=False, end=True),
-                                                Functor(self.purgeRseObj, dumpRSE=True)])
+                                                Functor(self.purgeRseObj, dumpRSE=self.msConfig['dumpRSE'])])
         # Initialization of the deleted files counters:
         self.rseCounters = {}
         self.plineCounters = {}
@@ -322,8 +324,15 @@ class MSUnmerged(MSCore):
         # Get rid of 'allUnmerged' directories
         rse['dirs']['allUnmerged'].clear()
 
-        # Now filter out all protected files from allUnmerged and leave just those eligible for deletion
-        # while
+        # Now filter out all protected files from allUnmerged and leave just those
+        # eligible for deletion. This will minimize the iteration time of the filters
+        # from toDelete later on.
+        # while rse['files']['allUnmerged'
+
+        # Create the filters for rse['files']['toDelete'] - those should be pure generators
+        for dirName in rse['dirs']['toDelete']:
+            rse['files']['toDelete'][dirName] = filter(lambda lfn: lfn.startswith(dirName),
+                                                       rse['files']['allUnmerged'])
 
         rse['counters']['toDelete'] = len(rse['files']['toDelete'])
         return rse
@@ -359,11 +368,13 @@ class MSUnmerged(MSCore):
         :param rse: The RSE to be checked
         :return:    rse
         """
+        msg = "\n----------------------------------------------------------"
+        msg += "\nMSUnmergedRSE: %s"
+        msg += "\n----------------------------------------------------------"
         if dumpRSE:
-            msg = "\n----------------------------------------------------------"
-            msg += "\nMSUnmergedRSE: %s"
-            msg += "\n----------------------------------------------------------"
             self.logger.debug(msg, pformat(rse))
+        else:
+            self.logger.debug(msg, pretty(rse, max_seq_length=5))
         rse.clear()
         return rse
 
