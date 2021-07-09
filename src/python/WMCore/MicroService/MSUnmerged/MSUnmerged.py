@@ -196,7 +196,7 @@ class MSUnmerged(MSCore):
         try:
             # for fileUnmerged in rse['files']['toDelete']:
             #     try:
-            #         self.gfalCommand(rse['delInterface'], fileUnmerged)
+            #         self.gfalCommand(rse['pfnPrefix'], fileUnmerged)
             #         rse['counters']['numFilesDeleted'] += 1
             #         rse['files']['deletedSuccess'].append(fileUnmerged)
             #     except Exception as ex:
@@ -257,18 +257,18 @@ class MSUnmerged(MSCore):
         :param rse: The RSE to work on
         :return:    rse
         """
-        allUnmerged = self.rucioConMon.getRSEUnmerged(rse['name'])
-        while allUnmerged:
-            filePath = allUnmerged.pop()
+        rse['files']['allUnmerged'] = self.rucioConMon.getRSEUnmerged(rse['name'])
+        for filePath in rse['files']['allUnmerged']:
+            # filePath = allUnmerged.pop()
             rse['counters']['totalNumFiles'] += 1
             # Check if what we start with is under /store/unmerged/*
             if self.regStoreUnmergedLfn.match(filePath):
                 # Cut the path to the deepest level known to WMStats protected LFNs
-                filePath = self._cutPath(filePath)
+                dirPath = self._cutPath(filePath)
                 # Check if what is left is still under /store/unmerged/*
-                if self.regStoreUnmergedLfn.match(filePath):
+                if self.regStoreUnmergedLfn.match(dirPath):
                     # Add it to the set of allUnmerged
-                    rse['files']['allUnmerged'].add(filePath)
+                    rse['dirs']['allUnmerged'].add(dirPath)
         return rse
 
     def _cutPath(self, filePath):
@@ -310,14 +310,20 @@ class MSUnmerged(MSCore):
         :param rse: The RSE to work on
         :return:    rse
         """
-        rse['files']['toDelete'] = rse['files']['allUnmerged'] - self.protectedLFNs
-        rse['files']['protected'] = rse['files']['allUnmerged'] & self.protectedLFNs
+        rse['dirs']['toDelete'] = rse['dirs']['allUnmerged'] - self.protectedLFNs
+        rse['dirs']['protected'] = rse['dirs']['allUnmerged'] & self.protectedLFNs
 
         # The following check may seem redundant, but better stay safe than sorry
-        if not (rse['files']['toDelete'] | rse['files']['protected']) == rse['files']['allUnmerged']:
+        if not (rse['dirs']['toDelete'] | rse['dirs']['protected']) == rse['dirs']['allUnmerged']:
             rse['counters']['toDelete'] = -1
             msg = "Incorrect set check while trying to estimate the final set for deletion."
             raise MSUnmergedPlineExit(msg)
+
+        # Get rid of 'allUnmerged' directories
+        rse['dirs']['allUnmerged'].clear()
+
+        # Now filter out all protected files from allUnmerged and leave just those eligible for deletion
+        # while
 
         rse['counters']['toDelete'] = len(rse['files']['toDelete'])
         return rse
@@ -339,7 +345,7 @@ class MSUnmerged(MSCore):
             pfnFull = pfnDict[lfn]
             if self.regStoreUnmergedPfn.match(pfnFull):
                 pfnPrefix = pfnFull.split('/store/unmerged/')[0]
-                rse['delInterface'] = pfnPrefix
+                rse['pfnPrefix'] = pfnPrefix
                 return rse
         rse['counters']['toDelete'] = -1
         msg = "Could not establish the correct pfn Prefix for RSE: %s." % rse['name']

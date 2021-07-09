@@ -22,7 +22,7 @@ class MSUnmergedRSE(dict):
         self.allUnmerged = []
         myDoc = {
             "name": rseName,
-            "delInterface": "",
+            "pfnPrefix": "",
             "isClean": False,
             "counters": {"totalNumFiles": 0,
                          "toDelete": 0,
@@ -33,8 +33,8 @@ class MSUnmergedRSE(dict):
                       "protected": set(),
                       "deletedSuccess": [],
                       "deletedFail": []},
-            "dirs": {"allUnmerged": [],
-                     "protected": [],
-                     "nonEmpty": [],
+            "dirs": {"allUnmerged": set(),
+                     "toDelete": set(),
+                     "protected": set(),
                      "empty": []}}
         self.update(myDoc)
