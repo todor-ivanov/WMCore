@@ -19,6 +19,7 @@ from time import time
 import random
 import re
 import os
+import gfal2
 
 # WMCore modules
 from WMCore.MicroService.DataStructs.DefaultStructs import UNMERGED_REPORT
@@ -68,6 +69,7 @@ class MSUnmerged(MSCore):
 
         self.msConfig.setdefault("verbose", True)
         self.msConfig.setdefault("interval", 60)
+        self.msConfig.setdefault("limitFilesPerRSE", 200)
         # self.msConfig.setdefault('limitRSEsPerInstance', 100)
         # self.msConfig.setdefault('limitTiersPerInstance', ['T1', 'T2', 'T3'])
         # self.msConfig.setdefault("rucioAccount", "FIXME_RUCIO_ACCT")
@@ -194,25 +196,68 @@ class MSUnmerged(MSCore):
         :param rse: MSUnmergedRSE object to be cleaned
         :return:    The MSUnmergedRSE object
         """
-        # if self.msConfig['enableRealMode']:
+
+        # Create the gfal2 context object:
         try:
-            # for fileUnmerged in rse['files']['toDelete']:
-            #     try:
-            #         self.gfalCommand(rse['pfnPrefix'], fileUnmerged)
-            #         rse['counters']['numFilesDeleted'] += 1
-            #         rse['files']['deletedSuccess'].append(fileUnmerged)
-            #     except Exception as ex:
-            #         rse['files']['deletedFail'].append(fileUnmerged)
-            #         msg = "Error while trying to delete file: %s for RSE: %s"
-            #         msg += "Will retry in the next cycle. Err: %s"
-            #         self.logger.debug(msg, fileUnmerged, rse['name'], str(ex))
-            rse['isClean'] = self._checkClean(rse)
+            ctx = gfal2.creat_context()
+            gfal2.set_verbose(gfal2.verbose_level.debug)
         except Exception as ex:
-            msg = "Error while cleaning RSE: %s"
-            msg += "Will retry in the next cycle. Err: %s"
-            self.logger.debug(msg, rse['name'], str(ex))
+            msg = "RSE: %s, Failed to create gfal2 Context object. Skipping it in the current run."
+            self.logger.info(msg, rseName)
+            raise MSUnmergedPlineExit(msg)
+
+        # Start cleaning one directory at a time:
+        for dirLfn, fileLfnGen in rse['files']['toDelete'].items():
+            if rse['counters']['filesToDelete'] < self.msConfig['limitFilesPerRSE']:
+
+                # Now we consume the rse['files']['toDelete'][dirLfn] generator
+                # upon that no values will be left in it. In case we need it again
+                # we will have to recreate the filter as we did in self.filterUnmergedFiles()
+                # dirPfn = rse['pfnPrefix'] + dirLfn
+                pfnList = []
+                for fileLfn in fileLfnGen:
+                    pfnList.append(rse['pfnPrefix'] + fileLfn)
+
+                rse['counters']['filesToDelete'] += len(pfnList)
+                msg = "\nRSE: %s Currently DELETING: %s."
+                msg += "\nFull PFN list: \n%s"
+                self.logger.debug(msg, rse['name'], dirLfn, pformat(pfnList))
+
+                if self.msConfig['enableRealMode']:
+                    try:
+                        # execute the actual deletion in bulk - full list of files per directory
+                        delResult = []
+                        delResult = ctx.unlink(pfnList)
+
+                        # Count all the successfully deleted files (if a deletion was
+                        # successful a value of None is put in the delResult list):
+                        deletedSuccess = [pfnStatus for pfnStatus in delResult if pfnStatus is None]
+                        self.logger.debug("RSE: %s, Dir: %s, deletedSuccess: %s",
+                                          rse['name'], dirLfn, deletedSuccess)
+                        rse['counters']['deletedSuccess'] += len(deletedSuccess)
+
+                        # Now clean the whole branch
+                        purgeSuccess = self._purgeTree(ctx, dirPfn)
+                        if not purgeSuccess:
+                            msg = "RSE: %s Failed to purge nonEmpty directory: %s"
+                            self.logger.error(msg, rse['name'], dirPfn)
+                    except Exception as ex:
+                        msg = "Error while cleaning RSE: %s"
+                        msg += "Will retry in the next cycle. Err: %s"
+                        self.logger.debug(msg, rse['name'], str(ex))
+        rse['isClean'] = self._checkClean(rse)
 
         return rse
+
+    def _purgeTree(self, ctx, dirPfn):
+        """
+        A method to be used for purging the tree bellow a specific branch bellow.
+        It deletes every empty directory bellow that branch + the origin at the end.
+        :param ctx:  The gfal2 context object
+        :return:     Bool: True if it managed to purge everything, False otherwise
+        """
+        successList = [False]
+        return all(successList)
 
     def _checkClean(self, rse):
         """
@@ -221,7 +266,7 @@ class MSUnmerged(MSCore):
         :param rse: The RSE to be checked
         :return:    Bool: True if all files found have been deleted, False otherwise
         """
-        return rse['counters']['toDelete'] == rse['counters']['deletedSuccess']
+        return rse['counters']['filesToDelete'] == rse['counters']['deletedSuccess']
 
     def consRecordAge(self, rse):
         """
@@ -232,12 +277,22 @@ class MSUnmerged(MSCore):
         rseName = rse['name']
         isConsDone = self.rseConsStats[rseName]['status'] == 'done'
         isConsNewer = self.rseConsStats[rseName]['end_time'] > self.rseTimestamps[rseName]['prevStartTime']
-        if isConsDone and isConsNewer:
-            return rse
-        else:
-            msg = "Old consistency record for RSE: %s. Skipping it in the current run."
+        isRootFailed = self.rseConsStats[rseName]['root_failed']
+
+        if not isConsNewer:
+            msg = "RSE: %s With old consistency record in Rucio Consistency Monitor. Skipping it in the current run."
             self.logger.info(msg, rseName)
             raise MSUnmergedPlineExit(msg)
+        if not isConsDone:
+            msg = "RSE: %s In non-final state in Rucio Consistency Monitor. Skipping it in the current run."
+            self.logger.info(msg, rseName)
+            raise MSUnmergedPlineExit(msg)
+        if isRootFailed:
+            msg = "RSE: %s With failed root in Rucio Consistency Monitor. Skipping it in the current run."
+            self.logger.info(msg, rseName)
+            raise MSUnmergedPlineExit(msg)
+
+        return rse
 
     # @profile
     def getUnmergedFiles(self, rse):
@@ -324,17 +379,24 @@ class MSUnmerged(MSCore):
         # Get rid of 'allUnmerged' directories
         rse['dirs']['allUnmerged'].clear()
 
-        # Now filter out all protected files from allUnmerged and leave just those
-        # eligible for deletion. This will minimize the iteration time of the filters
-        # from toDelete later on.
+        # NOTE: Here we may want to filter out all protected files from allUnmerged and leave just those
+        #       eligible for deletion. This will minimize the iteration time of the filters
+        #       from toDelete later on.
         # while rse['files']['allUnmerged'
 
-        # Create the filters for rse['files']['toDelete'] - those should be pure generators
-        for dirName in rse['dirs']['toDelete']:
-            rse['files']['toDelete'][dirName] = filter(lambda lfn: lfn.startswith(dirName),
-                                                       rse['files']['allUnmerged'])
+        # Now create the filters for rse['files']['toDelete'] - those should be pure generators
+        # A simple generator:
+        def genFunc(pattern, iterable):
+            for i in iterable:
+                if i.startswith(pattern):
+                    yield i
 
-        rse['counters']['toDelete'] = len(rse['files']['toDelete'])
+        # Populate the filters:
+        for dirName in rse['dirs']['toDelete']:
+            rse['files']['toDelete'][dirName] = genFunc(dirName, rse['files']['allUnmerged'])
+
+        # Update the counters:
+        rse['counters']['dirsToDelete'] = len(rse['files']['toDelete'])
         return rse
 
     def getPfn(self, rse):
