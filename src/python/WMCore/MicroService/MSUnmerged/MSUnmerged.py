@@ -19,6 +19,9 @@ from time import time
 import random
 import re
 import os
+import sys
+import errno
+import stat
 import gfal2
 
 # WMCore modules
@@ -190,6 +193,7 @@ class MSUnmerged(MSCore):
             self.plineCounters[pline.name]['rsesCleaned'], \
             self.plineCounters[pline.name]['deletedSuccess']
 
+    # @profile
     def cleanRSE(self, rse):
         """
         The method to implement the actual deletion of files for an RSE.
@@ -203,17 +207,20 @@ class MSUnmerged(MSCore):
             gfal2.set_verbose(gfal2.verbose_level.debug)
         except Exception as ex:
             msg = "RSE: %s, Failed to create gfal2 Context object. Skipping it in the current run."
-            self.logger.info(msg, rseName)
+            self.logger.info(msg, rse['name'])
             raise MSUnmergedPlineExit(msg)
 
         # Start cleaning one directory at a time:
         for dirLfn, fileLfnGen in rse['files']['toDelete'].items():
-            if rse['counters']['filesToDelete'] < self.msConfig['limitFilesPerRSE']:
+            if self.msConfig['limitFilesPerRSE'] < 0 or \
+               rse['counters']['filesToDelete'] < self.msConfig['limitFilesPerRSE']:
+
+                # First increment the dir counter:
+                rse['counters']['dirsToDelete'] += 1
 
                 # Now we consume the rse['files']['toDelete'][dirLfn] generator
                 # upon that no values will be left in it. In case we need it again
                 # we will have to recreate the filter as we did in self.filterUnmergedFiles()
-                # dirPfn = rse['pfnPrefix'] + dirLfn
                 pfnList = []
                 for fileLfn in fileLfnGen:
                     pfnList.append(rse['pfnPrefix'] + fileLfn)
@@ -237,6 +244,7 @@ class MSUnmerged(MSCore):
                         rse['counters']['deletedSuccess'] += len(deletedSuccess)
 
                         # Now clean the whole branch
+                        dirPfn = rse['pfnPrefix'] + dirLfn
                         purgeSuccess = self._purgeTree(ctx, dirPfn)
                         if not purgeSuccess:
                             msg = "RSE: %s Failed to purge nonEmpty directory: %s"
@@ -249,14 +257,52 @@ class MSUnmerged(MSCore):
 
         return rse
 
-    def _purgeTree(self, ctx, dirPfn):
+    def _purgeTree(self, ctx, baseDirPfn):
         """
-        A method to be used for purging the tree bellow a specific branch bellow.
+        A method to be used for purging the tree bellow a specific branch.
         It deletes every empty directory bellow that branch + the origin at the end.
         :param ctx:  The gfal2 context object
         :return:     Bool: True if it managed to purge everything, False otherwise
         """
-        successList = [False]
+        successList = []
+
+        if baseDirPfn[-1] != '/':
+            baseDirPfn += '/'
+
+        for dirEntry in ctx.listdir(baseDirPfn):
+            if dirEntry in ['.', '..']:
+                continue
+            self.logger.debug("Purging dirEntry: %s:\n" % dirEntry)
+            dirEntryPfn = baseDirPfn + dirEntry
+            try:
+                entryStat = ctx.stat(dirEntryPfn)
+            except gfal2.GError:
+                e = sys.exc_info()[1]
+                if e.code == errno.ENOENT:
+                    self.logger.error("MISSING dirEntry: %s" % dirEntryPfn)
+                    successList.append(False)
+                    return all(successList)
+                else:
+                    self.logger.error("FAILED dirEntry: %s" % dirEntryPfn)
+                    raise
+            if stat.S_ISDIR(entryStat.st_mode):
+                successList.append(self._purgeTree(ctx, dirEntryPfn))
+
+        try:
+            success = ctx.rmdir(baseDirPfn)
+            # for gfal2 rmdir() exit status of 0 is success
+            if success == 0:
+                successList.append(True)
+            else:
+                successList.append(False)
+            self.logger.debug("RMDIR baseDir: %s" % baseDirPfn)
+        except gfal2.GError:
+            e = sys.exc_info()[1]
+            if e.code == errno.ENOENT:
+                self.logger.error("MISSING baseDir: %s" % baseDirPfn)
+            else:
+                self.logger.error("FAILED basedir: %s" % baseDirPfn)
+                raise
         return all(successList)
 
     def _checkClean(self, rse):
@@ -396,7 +442,7 @@ class MSUnmerged(MSCore):
             rse['files']['toDelete'][dirName] = genFunc(dirName, rse['files']['allUnmerged'])
 
         # Update the counters:
-        rse['counters']['dirsToDelete'] = len(rse['files']['toDelete'])
+        rse['counters']['dirsToDeleteAll'] = len(rse['files']['toDelete'])
         return rse
 
     def getPfn(self, rse):

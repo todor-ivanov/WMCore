@@ -31,6 +31,7 @@ class MSUnmergedRSE(dict):
             "pfnPrefix": "",
             "isClean": False,
             "counters": {"totalNumFiles": 0,
+                         "dirsToDeleteAll" : 0,
                          "dirsToDelete" : 0,
                          "filesToDelete": 0,
                          "deletedSuccess": 0,
