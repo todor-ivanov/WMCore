@@ -122,9 +122,34 @@ class MSUnmerged(MSCore):
         summary = dict(UNMERGED_REPORT)
 
         # refresh statistics on every poling cycle
-        self.rseConsStats = self.rucioConMon.getRSEStats()
-        self.protectedLFNs = set(self.wmstatsSvc.getProtectedLFNs())
-        # self.logger.debug("protectedLFNs: %s", pformat(self.protectedLFNs))
+
+        try:
+            self.rseConsStats = self.rucioConMon.getRSEStats()
+            self.logger.debug("RucioConMon Stats: %s", pformat(self.rseConsStats))
+            self.protectedLFNs = set(self.wmstatsSvc.getProtectedLFNs())
+            self.logger.debug("protectedLFNs: %s", pformat(self.protectedLFNs))
+
+            if not self.protectedLFNs:
+                msg = "Could not fetch list with protectedLFNs from WMStatServer. "
+                msg += "Skipping the current run."
+                msg += "\nTotal number of RSEs processed: %s."
+                msg += "\nTotal number of files fetched from RucioConMon: %s."
+                msg += "\nNumber of RSEs cleaned: %s."
+                msg += "\nNumber of files deleted: %s."
+                self.logger.info(msg,
+                                 0,
+                                 0,
+                                 0,
+                                 0)
+                self.updateReportDict(summary, "total_num_rses", 0)
+                self.updateReportDict(summary, "total_num_files", 0)
+                self.updateReportDict(summary, "num_rses_cleaned", 0)
+                self.updateReportDict(summary, "num_files_deleted", 0)
+                return summary
+        except Exception as ex:
+            msg = "Unknown exception while running MSUnmerged thread Error: %s"
+            self.logger.exception(msg, str(ex))
+            self.updateReportDict(summary, "error", msg)
 
         try:
             rseList = self.getRSEList()
