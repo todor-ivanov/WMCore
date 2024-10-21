@@ -415,7 +415,7 @@ class Request(RESTEntity):
         reqArgs = deepcopy(request_args)
 
         if not reqArgs:
-            cherrypy.log("Nothing to be changed at this stage")
+            cherrypy.log(f"Nothing to be changed at this stage for {workload.name()}")
             return 'OK'
 
         if workqueue_stat_validation(reqArgs):
@@ -441,9 +441,15 @@ class Request(RESTEntity):
                 reqArgsNothandled.append(reqArg)
                 cherrypy.log("Unhandled argument for no-status update: %s" % reqArg)
 
+        reqStatus = self.reqmgr_db_service.getRequestByNames(workload.name())[workload.name()]['RequestStatus']
+        cherrypy.log(f"CurrentRequest status: {reqStatus}")
         if reqArgsNothandled:
-            msg = "There were unhandled arguments left for no-status update: %s" % reqArgsNothandled
-            raise InvalidSpecParameterValue(msg)
+            if reqStatus == 'assignment-approved':
+                cherrypy.log(f"Handling assignment-approved arguments differently!")
+                self._handleAssignmentStateTransition(workload, request_args, dn)
+            else:
+                msg = "There were unhandled arguments left for no-status update: %s" % reqArgsNothandled
+                raise InvalidSpecParameterValue(msg)
 
         # Commit the changes of the current workload object to the database:
         workload.saveCouchUrl(workload.specUrl())
