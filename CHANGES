@@ -1,3 +1,44 @@
+2.3.8rc5 to 2.3.8rc6:
+  - Few minor environment fixes at deploy time. (Todor Ivanov) #12183
+  - Properly run restartComponent.sh avoiding hardwired paths (Todor Ivanov) #12185
+  - Fix delayed $WMA_DEPLOY_DIR env virable (Todor Ivanov) #12167
+
+
+2.3.8rc4 to 2.3.8rc5:
+  - Convert reusable to non-reusable GitHub Action (Alan Malta Rodrigues) #12180
+  - Revert changes for attestation in CD pipeline (Alan Malta Rodrigues) #12180
+
+
+2.3.8rc3 to 2.3.8rc4:
+  - Grant attestation write access - CI/CD pipeline (Alan Malta Rodrigues) #12178
+
+
+2.3.8rc2 to 2.3.8rc3:
+  - Integrate package attestations in the CI/CD pipeline (Alan Malta Rodrigues) #12177
+  - Unit tests (Todor Ivanov) #12120
+  - Add SiteList actions to transient statuses in ReqMgr2 (Todor Ivanov) #12120
+
+
+2.3.8rc1 to 2.3.8rc2:
+  - Changed truster publisher configuration in pypi (Alan Malta Rodrigues) 
+
+
+2.3.7 to 2.3.8rc1:
+  - Fix str to bytes comparisons in checkProxy.py (Todor Ivanov) #12174
+  - Replace xquery with query, due to deprecation of the former since HTCondor 10.7.0 (Kenyi Hurtado) #12158
+  - add RucioUtils_t.RucioUtilsTest:testWeightedChoice to the unstable test (Alan Malta Rodrigues) #12150
+  - Update workqueue selector filter to no longer use ParentQueueUrl (Alan Malta Rodrigues) #12150
+
+
+2.3.6 to 2.3.7:
+  - Augmentation of gfal-cp debuggin for StageOutImpl and GFAL2Impl scripts (Andrea Piccinelli) #12081
+  - Provide JSON file with CouchDB replication selector function (Alan Malta Rodrigues) #12143
+  - Replace WorkQueue replication filter by selector function (Alan Malta Rodrigues) #12143
+  - check UserDrainMode before updating AgentDrainMode (Muhammad Hassan Ahmed) #12142
+  - make documentation a list of the code review (Alan Malta Rodrigues) #
+  - wmstats - consistent reporting of wmagent disk use (Dario Mapelli) #12140
+
+
 2.3.6rc8 to 2.3.6:
   - Disable MS-output DID not found (Muhammad Hassan Ahmed) #12135
 
